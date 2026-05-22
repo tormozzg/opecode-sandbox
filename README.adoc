@@ -1,0 +1,50 @@
+= Opencode Java Sandbox
+
+== Build docker image
+
+`JDK_PACKAGE` - SdkMan java package.
+
+Examples:
+
+* Java 21: `docker build -t oc-sandbox-jdk21 --build-arg JDK_PACKAGE=21.0.10-librca`
+* Java 8 `docker build -t oc-sandbox-jdk8 --build-arg JDK_PACKAGE=8.0.482-librca .`
+
+
+== Run docker
+
+[source, bash]
+----
+docker run \
+# Mount project directory
+  -v ./:/workspace \
+
+# Mount opencode config directories to save state and history
+  -v ~/opencode/sandbox/data:/home/opencode/.local/share/opencode \
+  -v ~/opencode/sandbox/state:/home/opencode/.local/state/opencode \
+  -v ~/opencode/sandbox/config:/home/opencode/.config/opencode \
+  -v ~/opencode/sandbox/cache:/home/opencode/.cache/opencode \
+
+# Mount gradle directory
+  -v ~/opencode/sandbox/gradle:/home/opencode/.gradle \
+
+# Run test containers
+  -v ~/.docker/run/docker.sock:/var/run/docker.sock \
+  -e TESTCONTAINERS_HOST_OVERRIDE=172.18.0.1 \
+# getent group docker - get docker GID
+# --group-add 999
+
+  -w /workspace \
+
+# Enable plan mode
+  -e OPENCODE_EXPERIMENTAL_PLAN_MODE=1 \
+
+# Use host network to get access to local models.
+# For linux systems --network host
+  --add-host=host.docker.internal:host-gateway \
+
+  --rm -it oc-sandbox-jdk21:latest opencode
+----
+
+Create bash file in `~/.local/bin` directory to fast run.
+
+
