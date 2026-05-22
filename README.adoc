@@ -6,7 +6,7 @@
 
 Examples:
 
-* Java 21: `docker build -t oc-sandbox-jdk21 --build-arg JDK_PACKAGE=21.0.10-librca`
+* Java 21: `docker build -t oc-sandbox-jdk21 --build-arg JDK_PACKAGE=21.0.10-librca .`
 * Java 8 `docker build -t oc-sandbox-jdk8 --build-arg JDK_PACKAGE=8.0.482-librca .`
 
 
