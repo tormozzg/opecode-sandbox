@@ -12,6 +12,13 @@ Examples:
 
 == Run docker
 
+Prepare:
+[source, bash]
+----
+mkdir -p ~/opencode/sandbox/{data,state,config,cache,gradle} && \
+  chown -R 1000:1000 ~/opencode/sandbox/*
+----
+
 [source, bash]
 ----
 docker run \
