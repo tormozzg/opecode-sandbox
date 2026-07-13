@@ -2,9 +2,6 @@ FROM debian:trixie-slim
 
 USER root
 
-# Create opencode user
-RUN groupadd -r opencode && useradd -s /bin/bash -m -g opencode opencode
-
 #Instapp packages
 RUN apt-get update
 RUN apt-get install --no-install-recommends -y python3 python3-pip python3-venv
@@ -21,36 +18,33 @@ RUN echo '#!/bin/bash\nsource /opt/opencode-venv/bin/activate\nexec "$@"' > /usr
 ENV PATH="/opt/opencode-venv/bin:${PATH}"
 ENV VIRTUAL_ENV="/opt/opencode-venv"
 
-# Fix permissions for the opencode user
-RUN chown -R opencode:opencode /opt/opencode-venv
 ENV SKIP_EGRESS_FIREWALL="true"
 
 RUN rm -rf /var/lib/apt/lists/*
-
-USER opencode
 
 COPY entrypoint.sh /entrypoint.sh
 ENTRYPOINT [ "/entrypoint.sh" ]
 
 SHELL ["/bin/bash", "-c"]
 
-ENV JAVA_HOME="/home/opencode/.sdkman/candidates/java/current"
-ENV OPENCODE_PATH="/home/opencode/.opencode/bin"
+ENV JAVA_HOME="/root/.sdkman/candidates/java/current"
+ENV OPENCODE_PATH="/root/.opencode/bin"
 ENV PATH="$OPENCODE_PATH:$JAVA_HOME/bin:$PATH"
 
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
-ENV NVM_DIR=/home/opencode/.nvm
+ENV NVM_DIR=/root/.nvm
 RUN bash -c "source $NVM_DIR/nvm.sh && nvm install 22.22.2"
 ENV PATH="${NVM_DIR}/versions/node/v22.22.2/bin:${PATH}"
 
-RUN npm i -g opencode-ai@1.14.51
+RUN curl -s "https://get.sdkman.io" | bash
+
+RUN npm i -g opencode-ai@1.17.18
 
 RUN npx oh-my-openagent install --no-tui --claude=no --gemini=no --copilot=no --openai=no
 RUN npx oh-my-openagent doctor
 
 WORKDIR /workspace
 
-RUN curl -s "https://get.sdkman.io" | bash
 ARG JDK_PACKAGE
 
 RUN source "$HOME/.sdkman/bin/sdkman-init.sh" \
