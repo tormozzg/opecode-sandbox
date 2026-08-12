@@ -38,7 +38,7 @@ ENV PATH="${NVM_DIR}/versions/node/v22.22.2/bin:${PATH}"
 
 RUN curl -s "https://get.sdkman.io" | bash
 
-RUN npm i -g opencode-ai@1.17.18
+RUN npm i -g opencode-ai@1.18.16
 
 RUN npx oh-my-openagent install --no-tui --claude=no --gemini=no --copilot=no --openai=no
 RUN npx oh-my-openagent doctor
