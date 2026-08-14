@@ -5,7 +5,7 @@ USER root
 #Instapp packages
 RUN apt-get update
 RUN apt-get install --no-install-recommends -y python3 python3-pip python3-venv
-RUN apt-get install --no-install-recommends -y git curl ca-certificates wget unzip zip
+RUN apt-get install --no-install-recommends -y git curl ca-certificates wget unzip zip shellcheck
 
 # Create a dedicated virtual environment
 RUN python3 -m venv /opt/opencode-venv
@@ -38,6 +38,9 @@ ENV PATH="${NVM_DIR}/versions/node/v22.22.2/bin:${PATH}"
 
 RUN curl -s "https://get.sdkman.io" | bash
 
+# Install LSP servers
+RUN npm install -g yaml-language-server bash-language-server
+
 RUN npm i -g opencode-ai@1.18.16
 
 RUN npx oh-my-openagent install --no-tui --claude=no --gemini=no --copilot=no --openai=no
@@ -50,4 +53,5 @@ ARG JDK_PACKAGE
 RUN source "$HOME/.sdkman/bin/sdkman-init.sh" \
 	&& sdk install java ${JDK_PACKAGE} \
 	&& sdk default java ${JDK_PACKAGE}
+
 
