@@ -1,6 +1,13 @@
 FROM debian:trixie-slim
 
+ARG USER_ID
+ARG GROUP_ID
+
 USER root
+
+RUN groupadd -g ${GROUP_ID} opencode && \
+			useradd -l -u ${USER_ID} -g opencode -m opencode
+
 
 #Instapp packages
 RUN apt-get update
@@ -18,21 +25,25 @@ RUN echo '#!/bin/bash\nsource /opt/opencode-venv/bin/activate\nexec "$@"' > /usr
 ENV PATH="/opt/opencode-venv/bin:${PATH}"
 ENV VIRTUAL_ENV="/opt/opencode-venv"
 
+RUN chown -R opencode:opencode /opt/opencode-venv
+
 ENV SKIP_EGRESS_FIREWALL="true"
 
 RUN rm -rf /var/lib/apt/lists/*
+
+USER opencode
 
 COPY entrypoint.sh /entrypoint.sh
 ENTRYPOINT [ "/entrypoint.sh" ]
 
 SHELL ["/bin/bash", "-c"]
 
-ENV JAVA_HOME="/root/.sdkman/candidates/java/current"
-ENV OPENCODE_PATH="/root/.opencode/bin"
+ENV JAVA_HOME="/home/opencode/.sdkman/candidates/java/current"
+ENV OPENCODE_PATH="/home/opencode/.opencode/bin"
 ENV PATH="$OPENCODE_PATH:$JAVA_HOME/bin:$PATH"
 
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
-ENV NVM_DIR=/root/.nvm
+ENV NVM_DIR=/home/opencode/.nvm
 RUN bash -c "source $NVM_DIR/nvm.sh && nvm install 22.22.2"
 ENV PATH="${NVM_DIR}/versions/node/v22.22.2/bin:${PATH}"
 
@@ -41,7 +52,7 @@ RUN curl -s "https://get.sdkman.io" | bash
 # Install LSP servers
 RUN npm install -g yaml-language-server bash-language-server
 
-RUN npm i -g opencode-ai@1.18.16
+RUN npm i -g opencode-ai@1.18.19
 
 RUN npx oh-my-openagent install --no-tui --claude=no --gemini=no --copilot=no --openai=no
 RUN npx oh-my-openagent doctor
