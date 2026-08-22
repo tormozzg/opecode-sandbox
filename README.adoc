@@ -2,12 +2,11 @@
 
 == Build docker image
 
-`JDK_PACKAGE` - SdkMan java package.
+`./build-image.sh [image_name] [sdk_jdk_package]`
 
-Examples:
+Example:
 
-* Java 21: `docker build -t oc-sandbox-jdk21 --build-arg JDK_PACKAGE=21.0.10-librca .`
-* Java 8 `docker build -t oc-sandbox-jdk8 --build-arg JDK_PACKAGE=8.0.482-librca .`
+`./build-image.sh oc-sandbox-jdk17 17.0.20-zulu`
 
 
 == Run docker
@@ -15,8 +14,7 @@ Examples:
 Prepare:
 [source, bash]
 ----
-mkdir -p ~/opencode/sandbox/{data,state,config,cache,gradle} && \
-  chown -R 1000:1000 ~/opencode/sandbox/*
+mkdir -p ~/opencode/sandbox/{data,state,config,cache,gradle}
 ----
 
 [source, bash]
