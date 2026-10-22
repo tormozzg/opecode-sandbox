@@ -8,7 +8,6 @@ USER root
 RUN groupadd -g ${GROUP_ID} opencode && \
 			useradd -l -u ${USER_ID} -g opencode -m opencode
 
-
 #Instapp packages
 RUN apt-get update
 RUN apt-get install --no-install-recommends -y python3 python3-pip python3-venv
@@ -44,23 +43,22 @@ ENV PATH="$OPENCODE_PATH:$JAVA_HOME/bin:$PATH"
 
 RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
 ENV NVM_DIR=/home/opencode/.nvm
-RUN bash -c "source $NVM_DIR/nvm.sh && nvm install 22.22.2"
-ENV PATH="${NVM_DIR}/versions/node/v22.22.2/bin:${PATH}"
+RUN bash -c "source $NVM_DIR/nvm.sh && nvm install 24.15.0"
+ENV PATH="${NVM_DIR}/versions/node/v24.15.0/bin:${PATH}"
 
 RUN curl -s "https://get.sdkman.io" | bash
 
 # Install LSP servers
-RUN npm install -g yaml-language-server bash-language-server
+RUN npm install -g yaml-language-server bash-language-server bun
 
-RUN npm i -g opencode-ai@1.18.19
+RUN npm i -g @opencode/cli@2.1.1
 
-RUN npx oh-my-openagent install --no-tui --claude=no --gemini=no --copilot=no --openai=no
-RUN npx oh-my-openagent doctor
+RUN bunx oh-my-openagent install --no-tui --claude=no --gemini=no --copilot=no --openai=no
+RUN bunx oh-my-openagent doctor
 
 WORKDIR /workspace
 
 ARG JDK_PACKAGE
-
 RUN source "$HOME/.sdkman/bin/sdkman-init.sh" \
 	&& sdk install java ${JDK_PACKAGE} \
 	&& sdk default java ${JDK_PACKAGE}
