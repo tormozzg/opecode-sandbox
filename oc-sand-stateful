@@ -1,0 +1,80 @@
+#!/bin/bash
+set -euo pipefail
+
+# Stateful opencode sandbox runner: keeps the container around between
+# sessions so files written inside the container (outside mounted dirs)
+# are preserved.
+
+# The image is required as the first argument (no hardcoded default).
+# Optional second argument: "recreate".
+if [[ $# -lt 1 ]]; then
+	echo "Usage: $(basename "$0") <image-name> [recreate]" >&2
+	echo "  <image-name>  docker image to run, e.g. the one built by build-image.sh" >&2
+	echo "  recreate      remove the existing container and create a fresh one" >&2
+	exit 1
+fi
+
+IMAGE="$1"
+ACTION="${2:-}"
+
+if [[ "$IMAGE" == "recreate" ]]; then
+	echo "Error: image name is required as the first argument." >&2
+	echo "Usage: $(basename "$0") <image-name> [recreate]" >&2
+	exit 1
+fi
+
+if [[ -n "$ACTION" && "$ACTION" != "recreate" ]]; then
+	echo "Error: unknown argument '$ACTION' (supported: recreate)" >&2
+	exit 1
+fi
+
+# Container name derived from the current project directory.
+PROJECT_NAME="$(basename "$PWD")"
+CONTAINER="oc-sand-${PROJECT_NAME}"
+
+# Shared docker flags (same mounts/env as the previous ephemeral runner).
+DOCKER_FLAGS=(
+	-v ./:/workspace
+	-v ~/opencode/sandbox/data:/home/opencode/.local/share/opencode
+	-v ~/opencode/sandbox/state:/home/opencode/.local/state/opencode
+	-v ~/opencode/sandbox/config:/home/opencode/.config/opencode
+	-v ~/opencode/sandbox/cache:/home/opencode/.cache/opencode
+	-v ~/opencode/sandbox/omo:/home/opencode/.omo
+	-v ~/opencode/sandbox/gradle:/home/opencode/.gradle
+	--group-add 959
+	-v /var/run/docker.sock:/var/run/docker.sock
+	-w /workspace
+	-e OPENCODE_EXPERIMENTAL_PLAN_MODE=1
+	--add-host=host.docker.internal:host-gateway
+)
+
+STATE="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
+
+if [[ "$ACTION" == "recreate" ]]; then
+	if [[ -n "$STATE" ]]; then
+		echo "Recreating container '$CONTAINER' (removing existing)..."
+		docker rm -f "$CONTAINER"
+	else
+		echo "No existing container '$CONTAINER' to recreate; creating fresh one."
+	fi
+	STATE=""
+fi
+
+case "$STATE" in
+	running)
+		echo "Container '$CONTAINER' is already running; attaching a new opencode session."
+		exec docker exec -it "$CONTAINER" opencode
+		;;
+	exited|created)
+		echo "Starting existing container '$CONTAINER'..."
+		exec docker start -ai "$CONTAINER"
+		;;
+	"")
+		echo "Creating new container '$CONTAINER' (image: $IMAGE)..."
+		exec docker run --name "$CONTAINER" -it "${DOCKER_FLAGS[@]}" "$IMAGE" opencode
+		;;
+	*)
+		echo "Error: container '$CONTAINER' is in unexpected state '$STATE'." >&2
+		exit 1
+		;;
+esac

@@ -9,47 +9,55 @@ Example:
 `./build-image.sh oc-sandbox-jdk17 17.0.20-zulu`
 
 
-== Run docker
+== Prepare directories
 
-Prepare:
+Prepare the host directories the sandbox mounts:
+
 [source, bash]
 ----
 mkdir -p ~/opencode/sandbox/{data,state,config,cache,gradle}
 ----
 
+
+== Run the sandbox
+
+The sandbox always runs through the `oc-sand-stateful` script, which keeps
+the container around between sessions: anything the agent wrote inside the
+container *outside* the mounted directories (e.g. packages installed into
+the image filesystem, files in `/tmp`, tool caches) survives across
+sessions.
+
 [source, bash]
 ----
-docker run \
-# Mount project directory
-  -v ./:/workspace \
-
-# Mount opencode config directories to save state and history
-  -v ~/opencode/sandbox/data:/home/opencode/.local/share/opencode \
-  -v ~/opencode/sandbox/state:/home/opencode/.local/state/opencode \
-  -v ~/opencode/sandbox/config:/home/opencode/.config/opencode \
-  -v ~/opencode/sandbox/cache:/home/opencode/.cache/opencode \
-
-# Mount gradle directory
-  -v ~/opencode/sandbox/gradle:/home/opencode/.gradle \
-
-# Run test containers
-  -v ~/.docker/run/docker.sock:/var/run/docker.sock \
-  -e TESTCONTAINERS_HOST_OVERRIDE=172.18.0.1 \
-# getent group docker - get docker GID
-# --group-add 999
-
-  -w /workspace \
-
-# Enable plan mode
-  -e OPENCODE_EXPERIMENTAL_PLAN_MODE=1 \
-
-# Use host network to get access to local models.
-# For linux systems --network host
-  --add-host=host.docker.internal:host-gateway \
-
-  --rm -it oc-sandbox-jdk21:latest opencode
+./oc-sand-stateful <image-name>
 ----
 
-Create bash file in `~/.local/bin` directory to fast run.
+Pass the image you built with `build-image.sh` as the first argument; the
+script has no hardcoded default image.
+
+Container naming:
+
+* The container is named `oc-sand-<project>`, where `<project>` is the
+  basename of the directory you run the script from. One container per
+  project.
+
+Behavior:
+
+* No container exists yet -> `docker run` (without `--rm`) creates and starts
+  it.
+* Container exists but is stopped -> `docker start -ai` resumes it.
+* Container is already running -> a message is printed and
+  `docker exec -it <container> opencode` attaches a new opencode session.
+
+Optional arguments:
+
+* `recreate` (as second argument, after the image name): removes the existing
+  container with `docker rm -f` and creates a fresh one. Use this after
+  rebuilding the image so the new container picks up the updated image:
++
+[source, bash]
+----
+./oc-sand-stateful <image-name> recreate
+----
 
 
