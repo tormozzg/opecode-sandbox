@@ -10,7 +10,11 @@ RUN groupadd -g ${GROUP_ID} opencode && \
 			useradd -l -u ${USER_ID} -g opencode -m opencode
 
 #Instapp packages
-RUN apt-get update &&  apt-get install --no-install-recommends -y python3 python3-pip python3-venv git curl ca-certificates wget unzip zip shellcheck
+RUN apt-get update &&  apt-get install --no-install-recommends -y python3 python3-pip python3-venv git curl ca-certificates wget unzip zip shellcheck sudo
+
+# Allow opencode to run sudo without a password (for installing packages at runtime)
+RUN echo 'opencode ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/opencode && \
+    chmod 0440 /etc/sudoers.d/opencode
 
 # Create a dedicated virtual environment
 RUN python3 -m venv /opt/opencode-venv
