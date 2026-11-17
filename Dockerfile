@@ -51,7 +51,7 @@ RUN curl -s "https://get.sdkman.io" | bash
 # Install LSP servers
 RUN npm install -g yaml-language-server bash-language-server bun
 
-RUN npm i -g opencode-ai@1.19.3
+RUN npm install -g opencode-ai@1.19.6
 
 RUN bunx oh-my-openagent install --no-tui --claude=no --gemini=no --copilot=no --openai=no --platform=native
 #RUN bunx oh-my-openagent doctor
