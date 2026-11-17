@@ -48,6 +48,13 @@ DOCKER_FLAGS=(
 	--add-host=host.docker.internal:host-gateway
 )
 
+# Optional extra docker flags from the environment (e.g. set by wrapper
+# scripts): split on whitespace into an array, no eval involved.
+EXTRA_FLAGS=()
+if [[ -n "${OC_SAND_EXTRA_FLAGS:-}" ]]; then
+	read -r -a EXTRA_FLAGS <<< "$OC_SAND_EXTRA_FLAGS"
+fi
+
 STATE="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
 
 if [[ "$ACTION" == "recreate" ]]; then
@@ -71,7 +78,9 @@ case "$STATE" in
 		;;
 	"")
 		echo "Creating new container '$CONTAINER' (image: $IMAGE)..."
-		exec docker run --name "$CONTAINER" -it "${DOCKER_FLAGS[@]}" "$IMAGE" opencode
+		# Extra flags only apply here: existing containers keep their fixed
+		# configuration (docker start / docker exec cannot change it).
+		exec docker run --name "$CONTAINER" -it "${DOCKER_FLAGS[@]}" "${EXTRA_FLAGS[@]}" "$IMAGE" opencode
 		;;
 	*)
 		echo "Error: container '$CONTAINER' is in unexpected state '$STATE'." >&2

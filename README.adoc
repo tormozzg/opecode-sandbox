@@ -61,3 +61,63 @@ Optional arguments:
 ----
 
 
+== Install as a command
+
+Copy the script somewhere on your `PATH`, e.g. `~/.local/bin`:
+
+[source, bash]
+----
+mkdir -p ~/.local/bin
+cp oc-sand-stateful ~/.local/bin/
+----
+
+Then run it from any project directory as `oc-sand-stateful <image-name>`;
+the container name is derived from the directory you invoke it from.
+
+
+== Extra docker flags: OC_SAND_EXTRA_FLAGS
+
+The optional environment variable `OC_SAND_EXTRA_FLAGS` injects additional
+docker flags into the `docker run` invocation that creates a *new* container.
+It is split on whitespace into separate arguments (no `eval`), so a simple
+space-separated string works:
+
+[source, bash]
+----
+OC_SAND_EXTRA_FLAGS="-e FOO=bar -v /host:/container" oc-sand-stateful <image-name>
+----
+
+Notes:
+
+* The flags only take effect when the container is first created. Existing
+  containers are started with `docker start -ai` or attached with
+  `docker exec -it`, neither of which can change a container's configuration;
+  the variable is ignored in those cases. Use `recreate` to rebuild the
+  container with new flags.
+* Typical uses are extra environment variables (`-e NAME=value`) and extra
+  mounts (`-v /host/path:/container/path`).
+
+
+== Project-specific wrapper scripts
+
+If you want image-specific or project-specific defaults, write your own tiny
+wrapper script instead of modifying `oc-sand-stateful`. The wrapper sets
+`OC_SAND_EXTRA_FLAGS` and execs the main script with a fixed image:
+
+[source, bash]
+----
+#!/bin/bash
+set -euo pipefail
+
+IMAGE="oc-sandbox-jdk25:latest"
+export OC_SAND_EXTRA_FLAGS="-e MY_PROJECT_ENV=1 -v $PWD/.secrets:/run/secrets:ro"
+
+exec oc-sand-stateful "$IMAGE" "$@"
+----
+
+Save it (e.g. as `~/bin/oc-sand-jdk25`), make it executable with
+`chmod +x`, and call it exactly like `oc-sand-stateful` — including the
+optional `recreate` argument, which is forwarded to the main script. The
+wrapper assumes `oc-sand-stateful` is on your `PATH` (e.g. installed in
+`~/.local/bin`).
+
