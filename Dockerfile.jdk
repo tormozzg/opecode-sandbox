@@ -1,0 +1,10 @@
+ARG BASE_IMAGE=oc-sandbox-base
+FROM ${BASE_IMAGE}
+
+ARG JDK_PACKAGE
+
+USER opencode
+
+RUN source "$HOME/.sdkman/bin/sdkman-init.sh" \
+	&& sdk install java ${JDK_PACKAGE} \
+	&& sdk default java ${JDK_PACKAGE}

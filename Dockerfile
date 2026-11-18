@@ -55,14 +55,9 @@ RUN curl -s "https://get.sdkman.io" | bash
 # Install LSP servers
 RUN npm install -g yaml-language-server bash-language-server bun
 
-RUN npm install -g @opencode/cli@2.3.0
+RUN npm install -g @opencode/cli@2.2.7
 
 
 WORKDIR /workspace
-
-ARG JDK_PACKAGE
-RUN source "$HOME/.sdkman/bin/sdkman-init.sh" \
-	&& sdk install java ${JDK_PACKAGE} \
-	&& sdk default java ${JDK_PACKAGE}
 
 
