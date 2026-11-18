@@ -4,9 +4,20 @@
 
 `./build-image.sh [image_name] [sdk_jdk_package]`
 
-Example:
+Without the second argument the script builds the JDK-free base image from
+`Dockerfile` and tags it with the given name. Example:
 
-`./build-image.sh oc-sandbox-jdk17 17.0.20-zulu`
+`./build-image.sh oc-sandbox`
+
+With the second argument the script builds in two steps: first it builds the
+base image from `Dockerfile` and tags it as `oc-sandbox-base`, then it builds
+the requested image from `Dockerfile.jdk`, which inherits the base via `FROM`
+and installs the JDK package with sdkman. Example:
+
+`./build-image.sh oc-sandbox-jdk25 25.0.4+1.1-zulu`
+
+The base image tag `oc-sandbox-base` is built by the script itself and is
+expected to exist locally for the second build.
 
 
 == Prepare directories
