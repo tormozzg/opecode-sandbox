@@ -6,31 +6,47 @@ set -euo pipefail
 # are preserved.
 
 # The image is required as the first argument (no hardcoded default).
-# Optional second argument: "recreate".
+# All remaining arguments are forwarded verbatim to opencode inside the
+# container; omit them to run the opencode TUI. The reserved word
+# "wipe-data" as the first argument after the image removes the project
+# container instead.
 if [[ $# -lt 1 ]]; then
-	echo "Usage: $(basename "$0") <image-name> [recreate]" >&2
-	echo "  <image-name>  docker image to run, e.g. the one built by build-image.sh" >&2
-	echo "  recreate      remove the existing container and create a fresh one" >&2
+	echo "Usage: $(basename "$0") <image-name> [opencode-args...]" >&2
+	echo "  <image-name>    docker image to run, e.g. the one built by build-image.sh" >&2
+	echo "  opencode-args   forwarded verbatim to 'opencode' inside the container;" >&2
+	echo "                  omit them to run the opencode TUI, or use 'wipe-data'" >&2
+	echo "                  to remove the project container" >&2
+	exit 1
+fi
+
+if [[ "$1" == "wipe-data" ]]; then
+	echo "Error: image name is required as the first argument." >&2
+	echo "Usage: $(basename "$0") <image-name> [opencode-args...]" >&2
 	exit 1
 fi
 
 IMAGE="$1"
-ACTION="${2:-}"
-
-if [[ "$IMAGE" == "recreate" ]]; then
-	echo "Error: image name is required as the first argument." >&2
-	echo "Usage: $(basename "$0") <image-name> [recreate]" >&2
-	exit 1
-fi
-
-if [[ -n "$ACTION" && "$ACTION" != "recreate" ]]; then
-	echo "Error: unknown argument '$ACTION' (supported: recreate)" >&2
-	exit 1
-fi
+shift
 
 # Container name derived from the current project directory.
 PROJECT_NAME="$(basename "$PWD")"
 CONTAINER="oc-sand-${PROJECT_NAME}"
+
+# Remove the project container so the next run creates a fresh one.
+if [[ "${1:-}" == "wipe-data" ]]; then
+	if [[ $# -gt 1 ]]; then
+		echo "Error: 'wipe-data' takes no additional arguments." >&2
+		exit 1
+	fi
+	if [[ -n "$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)" ]]; then
+		echo "Removing container '$CONTAINER' (wipe-data)..."
+		docker rm -f "$CONTAINER"
+		echo "Container '$CONTAINER' removed; the next run creates a fresh one."
+	else
+		echo "No container '$CONTAINER' exists; nothing to wipe."
+	fi
+	exit 0
+fi
 
 # Shared docker flags (same mounts/env as the previous ephemeral runner).
 DOCKER_FLAGS=(
@@ -55,17 +71,51 @@ if [[ -n "${OC_SAND_EXTRA_FLAGS:-}" ]]; then
 	read -r -a EXTRA_FLAGS <<< "$OC_SAND_EXTRA_FLAGS"
 fi
 
-STATE="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
+# Ensure the container exists and is running, without attaching to it.
+# Shared by the opencode-argument modes, which exec a command into the
+# container afterwards. Leaves the container running.
+ensure_container_running() {
+	local state
+	state="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
+	case "$state" in
+		running)
+			echo "Container '$CONTAINER' is already running."
+			;;
+		exited|created)
+			echo "Starting existing container '$CONTAINER'..."
+			docker start "$CONTAINER"
+			;;
+		"")
+			echo "Creating new container '$CONTAINER' (image: $IMAGE) in the background for this session..."
+			docker run --name "$CONTAINER" -d "${DOCKER_FLAGS[@]}" "${EXTRA_FLAGS[@]}" "$IMAGE" sleep infinity >/dev/null
+			for _ in {1..15}; do
+				state="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
+				if [[ "$state" == "running" ]]; then
+					break
+				fi
+				sleep 0.2
+			done
+			if [[ "$state" != "running" ]]; then
+				echo "Error: container '$CONTAINER' did not reach state 'running' after creation." >&2
+				exit 1
+			fi
+			;;
+		*)
+			echo "Error: container '$CONTAINER' is in unexpected state '$state'." >&2
+			exit 1
+			;;
+	esac
+}
 
-if [[ "$ACTION" == "recreate" ]]; then
-	if [[ -n "$STATE" ]]; then
-		echo "Recreating container '$CONTAINER' (removing existing)..."
-		docker rm -f "$CONTAINER"
-	else
-		echo "No existing container '$CONTAINER' to recreate; creating fresh one."
-	fi
-	STATE=""
+# Run opencode with the given arguments inside the container; the
+# container is created/started first and stays running.
+if [[ $# -gt 0 ]]; then
+	ensure_container_running
+	echo "Running 'opencode $*' inside container '$CONTAINER'..."
+	exec docker exec -it "$CONTAINER" opencode "$@"
 fi
+
+STATE="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
 
 case "$STATE" in
 	running)

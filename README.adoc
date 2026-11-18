@@ -48,16 +48,39 @@ Behavior:
 * Container exists but is stopped -> `docker start -ai` resumes it.
 * Container is already running -> a message is printed and
   `docker exec -it <container> opencode` attaches a new opencode session.
+* All arguments after the image name are forwarded verbatim to `opencode`
+  inside the container (e.g. `auth login`, `--version`, `serve`) — except
+  the reserved word `wipe-data`, described below; the same
+  container-state rules apply, but the command runs with
+  `docker exec -it <container> opencode <args...>` instead of starting the
+  TUI. A missing container is created detached (running `sleep infinity`),
+  a stopped one is started first.
 
 Optional arguments:
 
-* `recreate` (as second argument, after the image name): removes the existing
-  container with `docker rm -f` and creates a fresh one. Use this after
-  rebuilding the image so the new container picks up the updated image:
+* `wipe-data` (as the first argument after the image name; a reserved word):
+  removes the project container with `docker rm -f` so the next run creates
+  a fresh one. Use this after rebuilding the image so the new container
+  picks up the updated image. The script does not create or start
+  anything, and exits 0 whether or not the container existed:
 +
 [source, bash]
 ----
-./oc-sand-stateful <image-name> recreate
+./oc-sand-stateful <image-name> wipe-data
+----
+
+Passing arguments to opencode:
+
+* With extra arguments after the image, the script makes sure the container
+  exists and is running (creating it detached or starting it if stopped),
+  then runs `opencode <args...>` inside it with `docker exec -it`:
++
+[source, bash]
+----
+./oc-sand-stateful <image-name> auth login
+./oc-sand-stateful <image-name> auth list
+./oc-sand-stateful <image-name> --version
+./oc-sand-stateful <image-name> serve
 ----
 
 
@@ -92,8 +115,8 @@ Notes:
 * The flags only take effect when the container is first created. Existing
   containers are started with `docker start -ai` or attached with
   `docker exec -it`, neither of which can change a container's configuration;
-  the variable is ignored in those cases. Use `recreate` to rebuild the
-  container with new flags.
+  the variable is ignored in those cases. Use `wipe-data` to remove the
+  container so the next run creates it with the new flags.
 * Typical uses are extra environment variables (`-e NAME=value`) and extra
   mounts (`-v /host/path:/container/path`).
 
@@ -117,7 +140,7 @@ exec oc-sand-stateful "$IMAGE" "$@"
 
 Save it (e.g. as `~/bin/oc-sand-jdk25`), make it executable with
 `chmod +x`, and call it exactly like `oc-sand-stateful` — including the
-optional `recreate` argument, which is forwarded to the main script. The
-wrapper assumes `oc-sand-stateful` is on your `PATH` (e.g. installed in
-`~/.local/bin`).
+`wipe-data` mode and opencode arguments, which are forwarded to the main
+script. The wrapper assumes `oc-sand-stateful` is on your `PATH` (e.g.
+installed in `~/.local/bin`).
 
