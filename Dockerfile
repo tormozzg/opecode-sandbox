@@ -56,6 +56,8 @@ RUN curl -s "https://get.sdkman.io" | bash
 
 # Install LSP servers
 RUN npm install -g yaml-language-server bash-language-server bun
+# Pre-install MCP servers so npx config entries resolve locally (no first-run download)
+RUN npm install -g @astudioplus/codegraph-mcp @ansible/ansible-mcp-server
 
 RUN npm install -g opencode-ai@1.19.6
 
