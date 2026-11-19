@@ -18,6 +18,8 @@ RUN echo 'opencode ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/opencode && \
 
 # Create a dedicated virtual environment
 RUN python3 -m venv /opt/opencode-venv
+# Ansible MCP needs ansible-lint for its lint tools
+RUN /opt/opencode-venv/bin/pip install --no-cache-dir ansible-lint
 
 # Create activation script for agents
 RUN echo '#!/bin/bash\nsource /opt/opencode-venv/bin/activate\nexec "$@"' > /usr/local/bin/activate-venv && \
