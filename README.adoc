@@ -66,6 +66,13 @@ Behavior:
   `docker exec -it <container> opencode <args...>` instead of starting the
   TUI. A missing container is created detached (running `sleep infinity`),
   a stopped one is started first.
+* Shared docker network: before creating or starting the container, the
+  script ensures the docker network `mcp-shared-network` exists (created
+  with the default bridge driver if missing) so the sandbox container can
+  reach MCP servers attached to the same network. New containers join it
+  at creation time via `--network`; a pre-existing container that is not
+  on the network yet is connected with `docker network connect` on the
+  next run. The `wipe-data` mode neither creates nor requires the network.
 
 Optional arguments:
 

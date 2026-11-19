@@ -32,6 +32,10 @@ shift
 PROJECT_NAME="$(basename "$PWD")"
 CONTAINER="oc-sand-${PROJECT_NAME}"
 
+# Shared docker network so the sandbox container can reach the MCP
+# servers attached to it.
+NETWORK="mcp-shared-network"
+
 # Remove the project container so the next run creates a fresh one.
 if [[ "${1:-}" == "wipe-data" ]]; then
 	if [[ $# -gt 1 ]]; then
@@ -62,6 +66,7 @@ DOCKER_FLAGS=(
 	-w /workspace
 	-e OPENCODE_EXPERIMENTAL_PLAN_MODE=1
 	--add-host=host.docker.internal:host-gateway
+	--network "$NETWORK"
 )
 
 # Optional extra docker flags from the environment (e.g. set by wrapper
@@ -70,6 +75,30 @@ EXTRA_FLAGS=()
 if [[ -n "${OC_SAND_EXTRA_FLAGS:-}" ]]; then
 	read -r -a EXTRA_FLAGS <<< "$OC_SAND_EXTRA_FLAGS"
 fi
+
+# Ensure the shared docker network exists; created once, silently kept
+# if already present. Called before any path that creates or starts the
+# container (wipe-data exits earlier and never needs the network).
+ensure_network() {
+	if ! docker network inspect "$NETWORK" >/dev/null 2>&1; then
+		echo "Creating docker network '$NETWORK'..."
+		docker network create "$NETWORK" >/dev/null
+	fi
+}
+ensure_network
+
+# Make sure the container is attached to the shared network. New
+# containers join at creation time via --network in DOCKER_FLAGS;
+# pre-existing ones (e.g. created before this script managed the
+# network) are connected here instead.
+ensure_container_connected() {
+	local networks
+	networks="$(docker inspect -f '{{range $k, $_ := .NetworkSettings.Networks}}{{$k}} {{end}}' "$CONTAINER" 2>/dev/null || true)"
+	if [[ " $networks " != *" $NETWORK "* ]]; then
+		echo "Connecting container '$CONTAINER' to network '$NETWORK'..."
+		docker network connect "$NETWORK" "$CONTAINER"
+	fi
+}
 
 # Ensure the container exists and is running, without attaching to it.
 # Shared by the opencode-argument modes, which exec a command into the
@@ -111,6 +140,7 @@ ensure_container_running() {
 # container is created/started first and stays running.
 if [[ $# -gt 0 ]]; then
 	ensure_container_running
+	ensure_container_connected
 	echo "Running 'opencode $*' inside container '$CONTAINER'..."
 	exec docker exec -it "$CONTAINER" opencode "$@"
 fi
@@ -120,10 +150,15 @@ STATE="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)
 case "$STATE" in
 	running)
 		echo "Container '$CONTAINER' is already running; attaching a new opencode session."
+		ensure_container_connected
 		exec docker exec -it "$CONTAINER" opencode
 		;;
 	exited|created)
 		echo "Starting existing container '$CONTAINER'..."
+		# Connect before starting: docker start -ai execs in place, so
+		# this is the last chance; a stopped container accepts the
+		# connect and it takes effect on start.
+		ensure_container_connected
 		exec docker start -ai "$CONTAINER"
 		;;
 	"")
