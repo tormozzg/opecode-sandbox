@@ -20,6 +20,20 @@ The base image tag `oc-sandbox-base` is built by the script itself and is
 expected to exist locally for the second build.
 
 
+== Host user mapping (UID/GID)
+
+The image contains an unprivileged `opencode` user, created from the
+`USER_ID` / `GROUP_ID` build args.
+
+* On Linux the script passes your own `id -u` / `id -g`, so bind-mounted
+  files (the project directory and `~/opencode/sandbox/*`) stay owned by you
+  inside the container.
+* On other platforms (macOS) the `Dockerfile` defaults `1000:1000` are used:
+  Docker Desktop virtualizes file ownership, so the host IDs do not have to be
+  mirrored inside the container. The macOS default GID 20 (`staff`) also
+  already exists in Debian as `dialout`, so passing it breaks `groupadd`.
+
+
 == Prepare directories
 
 Prepare the host directories the sandbox mounts:
@@ -100,6 +114,27 @@ Passing arguments to opencode:
 ./oc-sand-stateful <image-name> --version
 ./oc-sand-stateful <image-name> serve
 ----
+
+
+== Docker access inside the sandbox
+
+The host docker socket is passed into the container so the docker CLI (and
+Testcontainers) inside the sandbox act on the host daemon — sibling
+containers, not a nested daemon:
+
+* on Linux `/var/run/docker.sock` is mounted and the container joins the
+  socket's GID (the `docker` group);
+* on macOS `~/.docker/run/docker.sock` (fallback `/var/run/docker.sock`) is
+  mounted and the container gets GID 0, because Docker Desktop exposes the
+  socket as `root:root` `0660` inside the container. The old hardcoded
+  `--group-add 959` only matches a Linux host.
+
+`TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal` is exported for
+Testcontainers, which then reaches the containers it starts on the host.
+
+The docker CLI itself is not part of the image: install it once inside the
+container (`sudo apt-get install -y docker-cli`), the stateful container
+keeps it.
 
 
 == Install as a command

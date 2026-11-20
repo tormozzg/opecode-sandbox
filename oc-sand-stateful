@@ -52,6 +52,8 @@ if [[ "${1:-}" == "wipe-data" ]]; then
 	exit 0
 fi
 
+OS="$(uname -s)"
+
 # Shared docker flags (same mounts/env as the previous ephemeral runner).
 DOCKER_FLAGS=(
 	-v ./:/workspace
@@ -61,10 +63,39 @@ DOCKER_FLAGS=(
 	-v ~/opencode/sandbox/cache:/home/opencode/.cache/opencode
 	-v ~/opencode/sandbox/omo:/home/opencode/.omo
 	-v ~/opencode/sandbox/gradle:/home/opencode/.gradle
-	--group-add 959
-	-v /var/run/docker.sock:/var/run/docker.sock
+)
+
+# Host docker socket, so the docker CLI and Testcontainers inside the sandbox
+# talk to the host daemon (sibling containers, not a nested daemon). Docker
+# Desktop shows the socket as root:root 0660 inside the container, so the
+# non-root sandbox user needs GID 0 there; on Linux the socket's own GID
+# (usually the "docker" group) is the right one.
+DOCKER_SOCKET=""
+if [[ "$OS" == "Linux" ]]; then
+	if [[ -S /var/run/docker.sock ]]; then
+		DOCKER_SOCKET=/var/run/docker.sock
+	fi
+elif [[ -S "$HOME/.docker/run/docker.sock" ]]; then
+	DOCKER_SOCKET="$HOME/.docker/run/docker.sock"
+elif [[ -S /var/run/docker.sock ]]; then
+	DOCKER_SOCKET=/var/run/docker.sock
+fi
+
+if [[ -n "$DOCKER_SOCKET" ]]; then
+	DOCKER_FLAGS+=( -v "$DOCKER_SOCKET:/var/run/docker.sock" )
+	if [[ "$OS" == "Linux" ]]; then
+		DOCKER_FLAGS+=( --group-add "$(stat -c '%g' "$DOCKER_SOCKET")" )
+	else
+		DOCKER_FLAGS+=( --group-add 0 )
+	fi
+else
+	echo "Warning: docker socket not found; docker CLI will not work inside the sandbox." >&2
+fi
+
+DOCKER_FLAGS+=(
 	-w /workspace
 	-e OPENCODE_EXPERIMENTAL_PLAN_MODE=1
+	-e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal
 	--add-host=host.docker.internal:host-gateway
 	--network "$NETWORK"
 )
@@ -116,7 +147,7 @@ ensure_container_running() {
 			;;
 		"")
 			echo "Creating new container '$CONTAINER' (image: $IMAGE) in the background for this session..."
-			docker run --name "$CONTAINER" -d "${DOCKER_FLAGS[@]}" "${EXTRA_FLAGS[@]}" "$IMAGE" sleep infinity >/dev/null
+			docker run --name "$CONTAINER" -d "${DOCKER_FLAGS[@]}" ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} "$IMAGE" sleep infinity >/dev/null
 			for _ in {1..15}; do
 				state="$(docker inspect -f '{{.State.Status}}' "$CONTAINER" 2>/dev/null || true)"
 				if [[ "$state" == "running" ]]; then
@@ -165,7 +196,7 @@ case "$STATE" in
 		echo "Creating new container '$CONTAINER' (image: $IMAGE)..."
 		# Extra flags only apply here: existing containers keep their fixed
 		# configuration (docker start / docker exec cannot change it).
-		exec docker run --name "$CONTAINER" -it "${DOCKER_FLAGS[@]}" "${EXTRA_FLAGS[@]}" "$IMAGE" opencode
+		exec docker run --name "$CONTAINER" -it "${DOCKER_FLAGS[@]}" ${EXTRA_FLAGS[@]+"${EXTRA_FLAGS[@]}"} "$IMAGE" opencode
 		;;
 	*)
 		echo "Error: container '$CONTAINER' is in unexpected state '$STATE'." >&2

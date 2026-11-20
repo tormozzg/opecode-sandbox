@@ -3,8 +3,10 @@ FROM debian:trixie-slim
 ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 
-ARG USER_ID
-ARG GROUP_ID
+# Defaults are used when no build args are passed (e.g. on macOS, where the
+# host IDs do not have to be mirrored inside the container).
+ARG USER_ID=1000
+ARG GROUP_ID=1000
 
 RUN groupadd -g ${GROUP_ID} opencode && \
 			useradd -l -u ${USER_ID} -g opencode -m opencode
