@@ -1,10 +1,88 @@
 ARG BASE_IMAGE=oc-sandbox-base
 FROM ${BASE_IMAGE}
 
-ARG JDK_PACKAGE
+# Space-separated list of sdkman JDK packages to install, e.g.
+# "8.0.452-zulu 17.0.12-zulu 25.0.4+1.1-zulu".
+# The LAST package in the list is the JDK that the LSP servers and linters
+# always run with (Java 25 is required by jdtls 1.63+), and it is also the
+# default `sdk default java` version unless the JAVA_DEFAULT build-arg is set.
+ARG JDK_PACKAGES
+ARG JAVA_DEFAULT
+# Optional: sdkman identifier of the JDK the LSP/linters run with.
+# Defaults to the LAST package in JDK_PACKAGES (the Java 25 one).
+ARG JAVA_TOOL_PACKAGE
+# Java/Kotlin LSP servers and linters. kotlin-lsp bundles its own JBR runtime;
+# jdtls, ktlint and checkstyle are wrapped to always run on the last JDK
+# from JDK_PACKAGES regardless of the default java version.
+ARG KOTLIN_LSP_VERSION=271.2085.0
+ARG JDTLS_VERSION=1.63.0
+ARG JDTLS_BUILD=202610191322
+ARG KTLINT_VERSION=1.8.0
+ARG CHECKSTYLE_VERSION=14.4.0
 
 USER opencode
 
-RUN source "$HOME/.sdkman/bin/sdkman-init.sh" \
-	&& sdk install java ${JDK_PACKAGE} \
-	&& sdk default java ${JDK_PACKAGE}
+# Install Kotlin LSP CLI (https://github.com/Kotlin/kotlin-lsp, standalone build)
+RUN set -euo pipefail \
+	&& case "$(uname -m)" in \
+		aarch64) arch="-aarch64" ;; \
+		*) arch="" ;; \
+	esac \
+	&& base_url="https://download.jetbrains.com/language-server/kotlin-server/${KOTLIN_LSP_VERSION}" \
+	&& archive="kotlin-server-${KOTLIN_LSP_VERSION}${arch}.tar.gz" \
+	&& dest="$HOME/.local/share/kotlin-server" \
+	&& mkdir -p "$HOME/.local/bin" "$dest" \
+	&& curl -fsSL -o "/tmp/${archive}" "${base_url}/${archive}" \
+	&& curl -fsSL -o "/tmp/${archive}.sha256" "${base_url}/${archive}.sha256" \
+	&& (cd /tmp && sha256sum --quiet -c "${archive}.sha256") \
+	&& tar -xzf "/tmp/${archive}" -C "$dest" --strip-components=1 \
+	&& chmod +x "${dest}/bin/intellij-server" \
+	&& ln -s "${dest}/bin/intellij-server" "$HOME/.local/bin/kotlin-lsp" \
+	&& rm -f "/tmp/${archive}" "/tmp/${archive}.sha256"
+
+# Install Eclipse JDT Language Server (jdtls) with a wrapper that pins it to
+# the tool JDK (last entry of JDK_PACKAGES), so it runs on Java 25 even when
+# the default java version is older. jdtls itself compiles projects from
+# Java 1.8 through 25.
+RUN set -euo pipefail \
+	&& tool_ver="${JAVA_TOOL_PACKAGE:-${JDK_PACKAGES##* }}" \
+	&& jdtls_archive="jdt-language-server-${JDTLS_VERSION}-${JDTLS_BUILD}.tar.gz" \
+	&& base_url="https://download.eclipse.org/jdtls/milestones/${JDTLS_VERSION}" \
+	&& dest="$HOME/.local/share/jdtls" \
+	&& mkdir -p "$HOME/.local/bin" "$dest" \
+	&& curl -fsSL -o "/tmp/${jdtls_archive}" "${base_url}/${jdtls_archive}" \
+	&& curl -fsSL -o "/tmp/${jdtls_archive}.sha256" "${base_url}/${jdtls_archive}.sha256" \
+	&& echo "$(cat "/tmp/${jdtls_archive}.sha256")  /tmp/${jdtls_archive}" | sha256sum --quiet -c - \
+	&& tar -xzf "/tmp/${jdtls_archive}" -C "$dest" \
+	&& chmod +x "${dest}/bin/jdtls" \
+	&& printf '#!/bin/sh\nj="$HOME/.sdkman/candidates/java/%s"\n[ -d "$j" ] || j="$HOME/.sdkman/candidates/java/current"\nJAVA_HOME="$j" exec "%s/bin/jdtls" "$@"\n' \
+		"$tool_ver" "$dest" > "$HOME/.local/bin/jdtls" \
+	&& chmod +x "$HOME/.local/bin/jdtls" \
+	&& rm -f "/tmp/${jdtls_archive}" "/tmp/${jdtls_archive}.sha256"
+
+# Install ktlint (Kotlin linter) and Checkstyle (Java linter) as wrappers that
+# always run on the tool JDK (last entry of JDK_PACKAGES).
+RUN set -euo pipefail \
+	&& tool_ver="${JAVA_TOOL_PACKAGE:-${JDK_PACKAGES##* }}" \
+	&& curl -fsSL -o "$HOME/.local/share/ktlint" \
+		"https://github.com/ktlint/ktlint/releases/download/${KTLINT_VERSION}/ktlint" \
+	&& curl -fsSL -o "$HOME/.local/share/checkstyle-all.jar" \
+		"https://github.com/checkstyle/checkstyle/releases/download/checkstyle-${CHECKSTYLE_VERSION}/checkstyle-${CHECKSTYLE_VERSION}-all.jar" \
+	&& printf '#!/bin/sh\nj="$HOME/.sdkman/candidates/java/%s"\n[ -d "$j" ] || j="$HOME/.sdkman/candidates/java/current"\nexec "$j/bin/java" -jar "$HOME/.local/share/ktlint" "$@"\n' \
+		"$tool_ver" > "$HOME/.local/bin/ktlint" \
+	&& printf '#!/bin/sh\nj="$HOME/.sdkman/candidates/java/%s"\n[ -d "$j" ] || j="$HOME/.sdkman/candidates/java/current"\nexec "$j/bin/java" -jar "$HOME/.local/share/checkstyle-all.jar" "$@"\n' \
+		"$tool_ver" > "$HOME/.local/bin/checkstyle" \
+	&& chmod +x "$HOME/.local/bin/ktlint" "$HOME/.local/bin/checkstyle"
+
+ENV PATH="/home/opencode/.local/bin:${PATH}"
+
+# Install every JDK from JDK_PACKAGES (last one is installed last and remains
+# the sdkman default unless JAVA_DEFAULT is set). NOTE: no `set -u` here --
+# sdkman-init.sh references unbound shell variables and aborts under it.
+RUN set -eo pipefail \
+	&& source "$HOME/.sdkman/bin/sdkman-init.sh" \
+	&& sed -i 's/sdkman_auto_answer=false/sdkman_auto_answer=true/' "$HOME/.sdkman/etc/config" \
+	&& for pkg in $JDK_PACKAGES; do \
+		sdk install java "$pkg" < /dev/null; \
+	done \
+	&& sdk default java "${JAVA_DEFAULT:-${JDK_PACKAGES##* }}"
