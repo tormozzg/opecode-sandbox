@@ -2,7 +2,7 @@
 
 == Build docker image
 
-`./build-image.sh [image_name] [sdk_jdk_package]`
+`./build-image.sh [image_name] [jdk_packages] [java_default]`
 
 Without the second argument the script builds the JDK-free base image from
 `Dockerfile` and tags it with the given name. Example:
@@ -12,9 +12,19 @@ Without the second argument the script builds the JDK-free base image from
 With the second argument the script builds in two steps: first it builds the
 base image from `Dockerfile` and tags it as `oc-sandbox-base`, then it builds
 the requested image from `Dockerfile.jdk`, which inherits the base via `FROM`
-and installs the JDK package with sdkman. Example:
+and installs every JDK package (space-separated sdkman identifiers) with
+sdkman. Example:
 
-`./build-image.sh oc-sandbox-jdk25 25.0.4+1.1-zulu`
+`./build-image.sh oc-sandbox-jdk "8.0.452-zulu 17.0.12-zulu 25.0.4+1.1-zulu"`
+
+The *last* package in the list is special: it is the JDK that the LSP
+servers and linters always run with (jdtls 1.63+ requires Java 25), and the
+default `sdk default java` version.
+
+The optional third argument overrides the default java version (any of the
+installed packages). Example with Java 17 as the default:
+
+`./build-image.sh oc-sandbox-jdk "8.0.452-zulu 17.0.12-zulu 25.0.4+1.1-zulu" 17.0.12-zulu`
 
 The base image tag `oc-sandbox-base` is built by the script itself and is
 expected to exist locally for the second build.
@@ -135,6 +145,131 @@ Testcontainers, which then reaches the containers it starts on the host.
 The docker CLI itself is not part of the image: install it once inside the
 container (`sudo apt-get install -y docker-cli`), the stateful container
 keeps it.
+
+
+== Java / Kotlin tooling
+
+`Dockerfile.jdk` installs all requested JDKs side by side via sdkman, plus:
+
+* `jdtls` — Eclipse JDT Language Server (Java LSP), in
+  `~/.local/share/jdtls`; the `~/.local/bin/jdtls` wrapper pins it to the
+  *last* JDK of `JDK_PACKAGES` (Java 25), because jdtls 1.63+ requires a
+  Java 25 runtime; the server itself compiles projects from Java 1.8
+  through 25, so even Java 8 projects get full LSP support;
+* `kotlin-lsp` — JetBrains Kotlin Language Server
+  (https://github.com/Kotlin/kotlin-lsp), standalone build with its own
+  bundled runtime (independent of the sdkman JDKs);
+* `ktlint` — Kotlin linter/formatter, wrapped to run on the last JDK;
+* `checkstyle` — Java linter, wrapped to run on the last JDK.
+
+=== Switching the default Java version
+
+At runtime the default version can be overridden per container with the
+`JAVA_DEFAULT` environment variable (applied by `entrypoint.sh` on start):
+
+[source, bash]
+----
+OC_SAND_EXTRA_FLAGS="-e JAVA_DEFAULT=17.0.12-zulu" ./oc-sand-stateful <image-name>
+----
+
+Inside a session the version can be switched without restarting:
+
+[source, bash]
+----
+sdk use java 17.0.12-zulu     # current shell only
+sdk default java 17.0.12-zulu # persist until the next JAVA_DEFAULT override
+----
+
+=== Connecting to opencode
+
+The sandbox mounts the host directory `~/opencode/sandbox/config` as the
+opencode config directory, so register the two LSP servers in
+`~/opencode/sandbox/config/opencode.jsonc` (replace the plain
+`"lsp": true` entry with the object form, which keeps the built-in servers
+enabled and adds the custom ones):
+
+[source, jsonc]
+----
+{
+  "lsp": {
+    "jdtls": {
+      "command": ["jdtls"],
+      "extensions": [".java"]
+    },
+    "kotlin-lsp": {
+      "command": ["kotlin-lsp", "--stdio"],
+      "extensions": [".kt", ".kts"]
+    }
+  }
+}
+----
+
+Optionally register ktlint as the automatic formatter for Kotlin files
+(it rewrites files, add only if you want that behavior):
+
+[source, jsonc]
+----
+{
+  "formatter": {
+    "ktlint": {
+      "command": ["ktlint", "--format", "$FILE"],
+      "extensions": [".kt", ".kts"]
+    }
+  }
+}
+----
+
+Checkstyle and ktlint have no MCP server and do not need one: opencode
+invokes them directly via `bash` when asked to lint, e.g.
+
+[source, bash]
+----
+ktlint src/                       # lint Kotlin sources
+checkstyle -c /google_checks.xml MyClass.java   # lint Java (bundled config)
+----
+
+=== Making the agent lint automatically
+
+Three mechanisms, from hard enforcement to on demand (all live in
+`~/opencode/sandbox/config/opencode.jsonc` and the files next to it, so they
+survive container recreation):
+
+*1. Auto-formatting (enforced by opencode after every edit)* — the
+`formatter` block above: opencode runs `ktlint --format` on `.kt`/`.kts`
+after each modification, so unformatted Kotlin never survives an edit.
+Checkstyle is deliberately not registered there: it only reports, it cannot
+fix files, so it would fail as a formatter.
+
+*2. Lint discipline in the system prompt* — the `instructions` option points
+at a rules file next to the config:
+
+[source, jsonc]
+----
+{
+  "instructions": ["java-lint-rules.md"]
+}
+----
+
+`java-lint-rules.md` tells the agent to run ktlint on every touched
+`.kt`/`.kts`, checkstyle on every touched `.java`, re-run the linters over
+all changed files before finishing a task, and report the final clean/broken
+state — and to never silence a rule without explaining why.
+
+*3. On-demand command* — a `/lint` command in the config:
+
+[source, jsonc]
+----
+{
+  "command": {
+    "lint": {
+      "template": "Lint the Java and Kotlin sources of this project and fix every finding.\n- Kotlin: run `ktlint` (add `-F`/`--format` for auto-fixable issues, e.g. `ktlint --format 'src/**/*.kt'`).\n- Java: run `checkstyle -c /google_checks.xml <files>` (list files with `git ls-files '*.java'` or `find`).\nReport each finding (file:line, rule), apply fixes, and re-run the linters until they are clean.\nOnly touch code related to the findings.",
+      "description": "Run ktlint + checkstyle and fix all findings"
+    }
+  }
+}
+----
+
+Run it in the TUI as `/lint`.
 
 
 == Install as a command
